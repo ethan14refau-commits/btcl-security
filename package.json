@@ -5,8 +5,8 @@
   "main": "dist/bot/index.js",
   "scripts": {
     "dev": "tsx watch src/bot/index.ts",
-    "build": "tsc --project tsconfig.json",
-    "start": "node dist/bot/index.js",
+    "build": "prisma generate && prisma migrate deploy",
+    "start": "tsx src/bot/index.ts",
     "deploy": "tsx src/bot/deploy.ts",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -41,7 +41,9 @@
     "winston": "^3.11.0",
     "axios": "^1.6.7",
     "dotenv": "^16.4.5",
-    "uuid": "^9.0.1"
+    "uuid": "^9.0.1",
+    "tsx": "^4.7.1",
+    "typescript": "^5.4.2"
   },
   "devDependencies": {
     "typescript": "^5.4.2",
