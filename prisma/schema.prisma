@@ -24,6 +24,8 @@ model Guild {
   whitelistEntries WhitelistEntry[]
   securityEvents   SecurityEvent[]
   moderationCases  ModerationCase[]
+  giveaways        Giveaway[]
+  tickets          Ticket[]
 }
 
 // ============================================================
@@ -183,7 +185,7 @@ model InviteJoin {
 model OAuthSession {
   id           String   @id @default(cuid())
   userId       String
-  accessToken  String   // Encrypted at rest (AES-256 via application layer)
+  accessToken  String
   refreshToken String?
   tokenType    String   @default("Bearer")
   scope        String
@@ -192,4 +194,98 @@ model OAuthSession {
   updatedAt    DateTime @updatedAt
 
   @@index([userId])
+}
+
+// ============================================================
+// Giveaways
+// ============================================================
+model Giveaway {
+  id          String   @id @default(cuid())
+  guildId     String
+  channelId   String
+  messageId   String?  @unique
+  hostId      String
+  prize       String
+  winnerCount Int      @default(1)
+  endsAt      DateTime
+  ended       Boolean  @default(false)
+  cancelled   Boolean  @default(false)
+  winnerIds   String   @default("[]")
+  createdAt   DateTime @default(now())
+
+  guild   Guild            @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  entries GiveawayEntry[]
+
+  @@index([guildId, ended])
+}
+
+model GiveawayEntry {
+  id         String   @id @default(cuid())
+  messageId  String
+  userId     String
+  enteredAt  DateTime @default(now())
+
+  giveaway Giveaway @relation(fields: [messageId], references: [messageId])
+
+  @@unique([messageId, userId])
+  @@index([messageId])
+}
+
+// ============================================================
+// XP / Levels
+// ============================================================
+model UserLevel {
+  id        String   @id @default(cuid())
+  guildId   String
+  userId    String
+  xp        Int      @default(0)
+  level     Int      @default(0)
+  messages  Int      @default(0)
+  updatedAt DateTime @updatedAt
+
+  @@unique([guildId, userId])
+  @@index([guildId, xp])
+}
+
+model LevelConfig {
+  id               String  @id @default(cuid())
+  guildId          String  @unique
+  enabled          Boolean @default(true)
+  xpPerMessage     Int     @default(15)
+  xpCooldownSecs   Int     @default(60)
+  levelUpChannelId String?
+  levelRoles       String  @default("[]") // JSON: [{level: N, roleId: "..."}]
+  excludedChannels String  @default("[]") // JSON array of channel IDs
+  excludedRoles    String  @default("[]") // JSON array of role IDs
+}
+
+// ============================================================
+// Tickets
+// ============================================================
+model Ticket {
+  id        String    @id @default(cuid())
+  guildId   String
+  channelId String    @unique
+  userId    String
+  number    Int
+  subject   String?
+  status    String    @default("OPEN") // OPEN | CLOSED
+  claimedBy String?
+  closedAt  DateTime?
+  createdAt DateTime  @default(now())
+
+  guild Guild @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  @@index([guildId, status])
+  @@index([guildId, userId])
+}
+
+model TicketConfig {
+  id             String  @id @default(cuid())
+  guildId        String  @unique
+  enabled        Boolean @default(false)
+  categoryId     String?
+  supportRoleId  String?
+  logChannelId   String?
+  maxOpenPerUser Int     @default(1)
 }

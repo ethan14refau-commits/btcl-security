@@ -4,6 +4,7 @@ import { BotClient } from '../types/discord.js';
 import { logger } from '../utils/logger.js';
 import { prisma } from '../database/client.js';
 import { cacheGuildInvites } from '../services/inviteTracker/InviteTrackerService.js';
+import { restoreGiveaways } from '../services/giveaway/GiveawayService.js';
 
 const event: BotEvent<Events.ClientReady> = {
   name: Events.ClientReady,
@@ -24,6 +25,10 @@ const event: BotEvent<Events.ClientReady> = {
       // Cache invites for invite tracker
       await cacheGuildInvites(guild);
     }
+
+    // Restore active giveaways
+    await restoreGiveaways(client);
+    logger.info('[Giveaway] Active giveaways restored');
 
     // Load saved bot activity from the first guild config that has one set
     // (activity is a global bot setting, stored per-owner config)
