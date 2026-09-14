@@ -6,6 +6,7 @@ import {
   PermissionResolvable,
   PermissionFlagsBits,
   ButtonInteraction,
+  ModalSubmitInteraction,
   TextChannel,
 } from 'discord.js';
 import { BotEvent } from '../types/event.js';
@@ -17,6 +18,7 @@ import { memberHasPermissions, botHasPermissions } from '../utils/permissions.js
 import { prisma } from '../database/client.js';
 import { endGiveaway, updateParticipantCount } from '../services/giveaway/GiveawayService.js';
 import { createTicket, closeTicket, claimTicket } from '../services/ticket/TicketService.js';
+import { handleVerifyButton, handleVerifyModal } from '../services/verification/VerificationService.js';
 
 const event: BotEvent<Events.InteractionCreate> = {
   name: Events.InteractionCreate,
@@ -37,9 +39,29 @@ const event: BotEvent<Events.InteractionCreate> = {
 
     // Only handle slash commands
     if (!interaction.isChatInputCommand()) {
+
+      // ─── Modal submissions ────────────────────────────────────────────────
+      if (interaction.type === InteractionType.ModalSubmit) {
+        const modal = interaction as ModalSubmitInteraction;
+
+        // Verification modal
+        if (modal.customId.startsWith('verify_modal_')) {
+          const targetUserId = modal.customId.replace('verify_modal_', '');
+          await handleVerifyModal(modal, targetUserId);
+          return;
+        }
+      }
+
       // ─── Button interactions ──────────────────────────────────────────────
       if (interaction.isButton()) {
         const btn = interaction as ButtonInteraction;
+
+        // ── Verification button ──
+        if (btn.customId.startsWith('verify_start_')) {
+          const targetUserId = btn.customId.replace('verify_start_', '');
+          await handleVerifyButton(btn, targetUserId);
+          return;
+        }
 
         // ── Giveaway enter button ──
         if (btn.customId === 'giveaway_enter') {

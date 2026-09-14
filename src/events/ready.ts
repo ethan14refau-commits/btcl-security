@@ -30,6 +30,12 @@ const event: BotEvent<Events.ClientReady> = {
     await restoreGiveaways(client);
     logger.info('[Giveaway] Active giveaways restored');
 
+    // Cleanup expired verifications every 2 minutes
+    const { cleanupExpiredVerifications } = await import('../services/verification/VerificationService.js');
+    setInterval(() => {
+      cleanupExpiredVerifications(client).catch((err) => logger.warn('[Verification] Cleanup error:', err));
+    }, 2 * 60 * 1000);
+
     // Load saved bot activity from the first guild config that has one set
     // (activity is a global bot setting, stored per-owner config)
     try {

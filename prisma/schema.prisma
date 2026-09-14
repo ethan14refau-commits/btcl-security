@@ -289,3 +289,29 @@ model TicketConfig {
   logChannelId   String?
   maxOpenPerUser Int     @default(1)
 }
+
+// ============================================================
+// Verification
+// ============================================================
+model VerificationConfig {
+  id                    String  @id @default(cuid())
+  guildId               String  @unique
+  enabled               Boolean @default(false)
+  verificationChannelId String?  // channel where verify button is posted
+  verifiedRoleId        String?  // role assigned after verification
+  pendingRoleId         String?  // optional role given before verification
+  useModal              Boolean @default(true) // ask a math question via modal
+}
+
+model VerificationPending {
+  id        String   @id @default(cuid())
+  guildId   String
+  userId    String
+  question  String   // the math question displayed to the user
+  answer    String   // expected answer to the math question
+  createdAt DateTime @default(now())
+  expiresAt DateTime // kick if not verified by this time
+
+  @@unique([guildId, userId])
+  @@index([guildId])
+}

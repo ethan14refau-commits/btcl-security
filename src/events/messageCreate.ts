@@ -355,6 +355,94 @@ const event: BotEvent<Events.MessageCreate> = {
       return;
     }
 
+    // ─── VERIFICATION ──────────────────────────────────────────────────────
+
+    if (cmd === 'verification' || cmd === 'verify') {
+      if (!member.permissions.has(PermissionFlagsBits.ManageGuild)) {
+        await reply(errorEmbed('Permission refusée', 'Tu as besoin de **Gérer le serveur**.'));
+        return;
+      }
+
+      const sub = args.shift()?.toLowerCase();
+
+      if (sub === 'setup') {
+        // +verification setup #salon @role
+        const verifChannel = message.mentions.channels.first();
+        const verifiedRole = message.mentions.roles.first();
+
+        if (!verifChannel || !verifiedRole) {
+          await reply(errorEmbed('Usage', '`+verification setup #salon @role_membre`\nExemple : `+verification setup #vérification @Membre`'));
+          return;
+        }
+
+        await prisma.verificationConfig.upsert({
+          where: { guildId: guild.id },
+          create: {
+            guildId: guild.id,
+            enabled: true,
+            verificationChannelId: verifChannel.id,
+            verifiedRoleId: verifiedRole.id,
+          },
+          update: {
+            enabled: true,
+            verificationChannelId: verifChannel.id,
+            verifiedRoleId: verifiedRole.id,
+          },
+        });
+
+        await reply(successEmbed('Vérification configurée ✅', [
+          `**Salon :** ${verifChannel.toString()}`,
+          `**Rôle attribué :** ${verifiedRole.toString()}`,
+          '',
+          'Quand un membre rejoint, il devra recopier un code de 5 caractères pour obtenir le rôle.',
+        ].join('\n')));
+        return;
+      }
+
+      if (sub === 'enable' || sub === 'on') {
+        await prisma.verificationConfig.upsert({
+          where: { guildId: guild.id },
+          create: { guildId: guild.id, enabled: true },
+          update: { enabled: true },
+        });
+        await reply(successEmbed('Vérification activée', '🔐 Le système de vérification est maintenant actif.'));
+        return;
+      }
+
+      if (sub === 'disable' || sub === 'off') {
+        await prisma.verificationConfig.upsert({
+          where: { guildId: guild.id },
+          create: { guildId: guild.id, enabled: false },
+          update: { enabled: false },
+        });
+        await reply(successEmbed('Vérification désactivée', 'Le système de vérification est maintenant désactivé.'));
+        return;
+      }
+
+      if (sub === 'status' || sub === 'info') {
+        const vc = await prisma.verificationConfig.findUnique({ where: { guildId: guild.id } });
+        const embed = new EmbedBuilder()
+          .setColor(0x5865f2)
+          .setTitle('🔐 Vérification — Configuration')
+          .addFields(
+            { name: 'Statut', value: vc?.enabled ? '✅ Activé' : '❌ Désactivé', inline: true },
+            { name: 'Salon', value: vc?.verificationChannelId ? `<#${vc.verificationChannelId}>` : 'Non configuré', inline: true },
+            { name: 'Rôle', value: vc?.verifiedRoleId ? `<@&${vc.verifiedRoleId}>` : 'Non configuré', inline: true },
+          )
+          .setTimestamp();
+        await reply(embed);
+        return;
+      }
+
+      await reply(errorEmbed('Usage', [
+        '`+verification setup #salon @role` — configure et active',
+        '`+verification enable` — active',
+        '`+verification disable` — désactive',
+        '`+verification status` — voir la configuration',
+      ].join('\n')));
+      return;
+    }
+
     // ─── INVITES ───────────────────────────────────────────────────────────
 
     if (cmd === 'invites') {

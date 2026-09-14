@@ -9,6 +9,7 @@ import { detectUsedInvite } from '../services/inviteTracker/InviteTrackerService
 import { sendLog } from '../services/logging/LogService.js';
 import { createEmbed } from '../utils/embeds.js';
 import { prisma } from '../database/client.js';
+import { getVerificationConfig, sendVerificationMessage } from '../services/verification/VerificationService.js';
 
 const event: BotEvent<Events.GuildMemberAdd> = {
   name: Events.GuildMemberAdd,
@@ -23,8 +24,18 @@ const event: BotEvent<Events.GuildMemberAdd> = {
     // Run anti-raid check
     await RaidDetector.getInstance().onMemberJoin(client, member);
 
-    // Apply auto-roles
-    await applyAutoRoles(member);
+    // ─── Verification system ────────────────────────────────────────────────
+    const verifyConfig = await getVerificationConfig(member.guild.id);
+
+    if (verifyConfig.enabled) {
+      // Verification is active — send verification message and skip auto-roles
+      // Auto-roles will be applied AFTER verification succeeds
+      await sendVerificationMessage(client, member);
+    } else {
+      // No verification — apply auto-roles immediately as before
+      await applyAutoRoles(member);
+    }
+    // ────────────────────────────────────────────────────────────────────────
 
     // Detect which invite was used
     const inviteInfo = await detectUsedInvite(member.guild, member);
@@ -39,17 +50,19 @@ const event: BotEvent<Events.GuildMemberAdd> = {
       await sendLog(client, member.guild.id, embed);
     }
 
-    // Welcome message
-    const config = await prisma.guildConfig.findUnique({ where: { guildId: member.guild.id } });
-    if (config?.welcomeChannelId) {
-      try {
-        const channel = await client.channels.fetch(config.welcomeChannelId);
-        if (channel?.isTextBased()) {
-          await (channel as TextChannel).send(
-            `🖤 **Bienvenue ${member.toString()} sur BTCL** 👑\n♠️ Prends ta place, respecte les règles et profite du serveur.\n🕷️ **Le BTCL t'attend.**`
-          );
-        }
-      } catch { /* salon introuvable */ }
+    // Welcome message (only shown if verification is disabled)
+    if (!verifyConfig.enabled) {
+      const config = await prisma.guildConfig.findUnique({ where: { guildId: member.guild.id } });
+      if (config?.welcomeChannelId) {
+        try {
+          const channel = await client.channels.fetch(config.welcomeChannelId);
+          if (channel?.isTextBased()) {
+            await (channel as TextChannel).send(
+              `🖤 **Bienvenue ${member.toString()} sur BTCL** 👑\n♠️ Prends ta place, respecte les règles et profite du serveur.\n🕷️ **Le BTCL t'attend.**`
+            );
+          }
+        } catch { /* salon introuvable */ }
+      }
     }
   },
 };
