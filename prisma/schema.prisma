@@ -1,0 +1,195 @@
+// Prisma schema for Discord Security Bot
+// SQLite in development, PostgreSQL-compatible for production
+// Switch DATABASE_URL in .env to use PostgreSQL
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================
+// Guild
+// ============================================================
+model Guild {
+  id        String   @id           // Discord guild snowflake ID
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  config           GuildConfig?
+  whitelistEntries WhitelistEntry[]
+  securityEvents   SecurityEvent[]
+  moderationCases  ModerationCase[]
+}
+
+// ============================================================
+// Guild Configuration
+// ============================================================
+model GuildConfig {
+  id      String @id @default(cuid())
+  guildId String @unique
+
+  // Anti-Raid
+  antiraidEnabled Boolean @default(false)
+  antiraidLevel   String  @default("MEDIUM") // LOW | MEDIUM | HIGH | EXTREME
+
+  // Anti-Nuke
+  antinukeEnabled Boolean @default(false)
+
+  // Logging
+  logChannelId String?
+
+  // Welcome
+  welcomeChannelId String?
+
+  // Lockdown
+  lockdownActive Boolean @default(false)
+
+  // Thresholds (stored as JSON strings for SQLite compatibility)
+  raidThresholds     String @default("{\"joins10s\":10,\"joins30s\":20,\"joins2m\":50,\"newAccountAgeDays\":7,\"mentionSpamCount\":10}")
+  antinukeThresholds String @default("{\"channelDelete\":5,\"channelCreate\":5,\"roleDelete\":5,\"roleCreate\":5,\"banCount\":5,\"kickCount\":5,\"webhookCreate\":3,\"windowSeconds\":10}")
+
+  // Moderation settings
+  moderationSettings String @default("{\"dmOnPunish\":true,\"deleteCommandMessages\":false}")
+
+  // Lockdown settings
+  lockdownSettings String @default("{\"denySendMessages\":true,\"denyAddReactions\":false}")
+
+  // Bot activity (global, set by owners only)
+  botActivity String? // JSON: { type, name, url? }
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  guild Guild @relation(fields: [guildId], references: [id], onDelete: Cascade)
+}
+
+// ============================================================
+// Bot Owners
+// ============================================================
+model BotOwner {
+  id      String   @id @default(cuid())
+  userId  String   @unique
+  addedBy String   // User ID of who added this owner
+  addedAt DateTime @default(now())
+}
+
+// ============================================================
+// Whitelist
+// ============================================================
+model WhitelistEntry {
+  id       String   @id @default(cuid())
+  guildId  String
+  targetId String   // Discord user/role/bot ID
+  type     String   // USER | ROLE | BOT
+  addedBy  String   // User ID
+  addedAt  DateTime @default(now())
+
+  guild Guild @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  @@unique([guildId, targetId])
+}
+
+// ============================================================
+// Security Events
+// ============================================================
+model SecurityEvent {
+  id       String   @id @default(cuid())
+  guildId  String
+  type     String   // RAID_DETECTED | NUKE_DETECTED | etc.
+  severity String   // INFO | LOW | MEDIUM | HIGH | CRITICAL
+  actorId  String?  // Discord user ID who triggered the event
+  targetId String?  // Discord user/channel/role ID affected
+  action   String   // Action taken description
+  details  String   // JSON string with additional details
+  createdAt DateTime @default(now())
+
+  guild Guild @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  @@index([guildId, createdAt])
+  @@index([guildId, type])
+}
+
+// ============================================================
+// Moderation Cases
+// ============================================================
+model ModerationCase {
+  id           String   @id @default(cuid())
+  caseNumber   Int      // Auto-incrementing per guild
+  guildId      String
+  type         String   // BAN | KICK | TIMEOUT | WARN | UNBAN | UNTIMEOUT | CLEAR | LOCK | UNLOCK
+  targetId     String
+  targetTag    String   // username#discriminator snapshot
+  moderatorId  String
+  moderatorTag String
+  reason       String?
+  duration     Int?     // Timeout duration in ms
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+
+  guild Guild @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  @@index([guildId, targetId])
+  @@index([guildId, caseNumber])
+}
+
+// ============================================================
+// Auto-Role
+// ============================================================
+model AutoRole {
+  id      String @id @default(cuid())
+  guildId String
+  roleId  String
+  addedAt DateTime @default(now())
+
+  @@unique([guildId, roleId])
+}
+
+// ============================================================
+// Invite Tracker
+// ============================================================
+model InviteData {
+  id         String   @id @default(cuid())
+  guildId    String
+  inviteCode String
+  inviterId  String   // Discord user ID who created the invite
+  uses       Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([guildId, inviteCode])
+  @@index([guildId, inviterId])
+}
+
+model InviteJoin {
+  id          String   @id @default(cuid())
+  guildId     String
+  joinerId    String   // The user who joined
+  inviterId   String   // The user whose invite was used
+  inviteCode  String
+  joinedAt    DateTime @default(now())
+
+  @@index([guildId, inviterId])
+  @@index([guildId, joinerId])
+}
+
+// ============================================================
+// OAuth Sessions (Dashboard)
+// ============================================================
+model OAuthSession {
+  id           String   @id @default(cuid())
+  userId       String
+  accessToken  String   // Encrypted at rest (AES-256 via application layer)
+  refreshToken String?
+  tokenType    String   @default("Bearer")
+  scope        String
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([userId])
+}
