@@ -585,7 +585,10 @@ const event: BotEvent<Events.MessageCreate> = {
       if (sub === 'info') {
         const id = args[0];
         if (!id) { await reply(errorEmbed('Usage', '`+backup info <id>`')); return; }
-        const match = (await listBackups(guild.id)).find((b) => b.id.startsWith(id));
+        const match = await prisma.serverBackup.findFirst({
+          where: { id: { startsWith: id } },
+          select: { id: true, guildId: true, guildName: true, createdBy: true, size: true, createdAt: true },
+        });
         if (!match) { await reply(errorEmbed('Introuvable', `Aucun backup trouvé avec l'ID \`${id}\`.`)); return; }
         const embed = new EmbedBuilder()
           .setColor(0x5865f2)
@@ -606,9 +609,12 @@ const event: BotEvent<Events.MessageCreate> = {
       if (sub === 'export') {
         const id = args[0];
         if (!id) { await reply(errorEmbed('Usage', '`+backup export <id>`')); return; }
-        const match = (await listBackups(guild.id)).find((b) => b.id.startsWith(id));
+        const match = await prisma.serverBackup.findFirst({
+          where: { id: { startsWith: id } },
+          select: { id: true, guildName: true },
+        });
         if (!match) { await reply(errorEmbed('Introuvable', `Aucun backup trouvé avec l'ID \`${id}\`.`)); return; }
-        const file = await exportBackupAsFile(match.id, guild.id);
+        const file = await exportBackupAsFile(match.id, match.guildName);
         if (!file) { await reply(errorEmbed('Erreur', 'Impossible d\'exporter ce backup.')); return; }
         await message.delete().catch(() => {});
         await message.channel.send({
@@ -622,8 +628,13 @@ const event: BotEvent<Events.MessageCreate> = {
       if (sub === 'load' || sub === 'restore') {
         const id = args[0];
         if (!id) { await reply(errorEmbed('Usage', '`+backup load <id>`')); return; }
-        const match = (await listBackups(guild.id)).find((b) => b.id.startsWith(id));
-        if (!match) { await reply(errorEmbed('Introuvable', `Aucun backup trouvé avec l'ID \`${id}\`.`)); return; }
+
+        // Search globally by ID prefix — not limited to current guild
+        const match = await prisma.serverBackup.findFirst({
+          where: { id: { startsWith: id } },
+          select: { id: true, guildName: true, createdBy: true, size: true, createdAt: true },
+        });
+        if (!match) { await reply(errorEmbed('Introuvable', `Aucun backup trouvé avec l'ID \`${id}\`.\n\nTu peux trouver l'ID avec \`+backup list\` sur le serveur d'origine.`)); return; }
 
         const msg = await message.reply({
           embeds: [

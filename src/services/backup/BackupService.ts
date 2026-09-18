@@ -291,7 +291,7 @@ export async function loadBackup(
   const errors: string[] = [];
 
   const backupRecord = await prisma.serverBackup.findFirst({
-    where: { id: backupId, guildId: guild.id },
+    where: { id: backupId },
   });
 
   if (!backupRecord) {
@@ -447,15 +447,15 @@ export async function loadBackup(
 
 // ─── Export backup as JSON file ───────────────────────────────────────────────
 
-export async function exportBackupAsFile(backupId: string, guildId: string): Promise<{ data: string; filename: string } | null> {
+export async function exportBackupAsFile(backupId: string, guildName: string): Promise<{ data: string; filename: string } | null> {
   const backup = await prisma.serverBackup.findFirst({
-    where: { id: backupId, guildId },
+    where: { id: backupId },
   });
   if (!backup) return null;
 
   return {
     data: backup.data,
-    filename: `backup_${backup.guildName.replace(/[^a-z0-9]/gi, '_')}_${backupId.slice(0, 8)}.json`,
+    filename: `backup_${(guildName || backup.guildName).replace(/[^a-z0-9]/gi, '_')}_${backupId.slice(0, 8)}.json`,
   };
 }
 
