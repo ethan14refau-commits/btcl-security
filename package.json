@@ -5,7 +5,7 @@
   "main": "dist/bot/index.js",
   "scripts": {
     "dev": "tsx watch src/bot/index.ts",
-    "build": "prisma generate && prisma migrate deploy",
+    "build": "prisma generate && prisma db push --accept-data-loss",
     "start": "tsx src/bot/index.ts",
     "deploy": "tsx src/bot/deploy.ts",
     "test": "vitest run",
