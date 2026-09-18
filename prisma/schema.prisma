@@ -315,3 +315,18 @@ model VerificationPending {
   @@unique([guildId, userId])
   @@index([guildId])
 }
+
+// ============================================================
+// Server Backups
+// ============================================================
+model ServerBackup {
+  id          String   @id @default(cuid())
+  guildId     String
+  guildName   String
+  createdBy   String   // User ID who created the backup
+  data        String   // Full JSON backup data
+  size        Int      @default(0) // approximate size in bytes
+  createdAt   DateTime @default(now())
+
+  @@index([guildId, createdAt])
+}

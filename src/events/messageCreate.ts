@@ -18,6 +18,7 @@ import { TextChannel, ChannelType } from 'discord.js';
 import { handleMessage as handleXP, getUserLevel, calculateLevel, xpForLevel, getLeaderboard, getRankPosition, getLevelConfig } from '../services/xp/XPService.js';
 import { createGiveaway, endGiveaway, rerollGiveaway, cancelGiveaway, buildGiveawayEmbed, buildGiveawayButton, updateParticipantCount } from '../services/giveaway/GiveawayService.js';
 import { createTicket, closeTicket, claimTicket, buildTicketPanelEmbed, buildTicketPanelButton, getTicketConfig } from '../services/ticket/TicketService.js';
+import { createBackup, listBackups, loadBackup, deleteBackup, exportBackupAsFile, formatSize, getBackupInfo } from '../services/backup/BackupService.js';
 import { prisma } from '../database/client.js';
 
 const PREFIX = '+';
@@ -515,9 +516,175 @@ const event: BotEvent<Events.MessageCreate> = {
           { name: '🎁 Giveaways', value: '`+giveaway create/end/reroll/cancel/info`', inline: false },
           { name: '📊 XP', value: '`+rank` `+leaderboard` `+level`', inline: false },
           { name: '🎫 Tickets', value: '`+ticket` `+ticket setup/close/claim/add/remove/rename`', inline: false },
+          { name: '💾 Backup', value: '`+backup create` `+backup list` `+backup load <id>` `+backup export <id>` `+backup delete <id>`', inline: false },
         )
         .setTimestamp();
       await reply(embed);
+      return;
+    }
+
+    // ─── BACKUP ────────────────────────────────────────────────────────────
+
+    if (cmd === 'backup') {
+      if (!member.permissions.has(PermissionFlagsBits.ManageGuild)) {
+        await reply(errorEmbed('Permission refusée', 'Tu as besoin de **Gérer le serveur** pour gérer les backups.'));
+        return;
+      }
+
+      const sub = args.shift()?.toLowerCase();
+
+      // +backup create
+      if (!sub || sub === 'create') {
+        const msg = await message.reply({ embeds: [{ description: '💾 Création du backup en cours...', color: 0x5865f2 }] });
+        try {
+          const id = await createBackup(client, guild, message.author.id);
+          const backups = await listBackups(guild.id);
+          const latest = backups[0];
+          await msg.edit({
+            embeds: [
+              new EmbedBuilder()
+                .setColor(0x57f287)
+                .setTitle('✅ Backup créé')
+                .addFields(
+                  { name: '🆔 ID', value: `\`${id.slice(0, 8)}\``, inline: true },
+                  { name: '📦 Taille', value: formatSize(latest?.size ?? 0), inline: true },
+                  { name: '📅 Date', value: `<t:${Math.floor(Date.now() / 1000)}:f>`, inline: true },
+                )
+                .setDescription('Utilise `+backup load <id>` pour restaurer ce backup.')
+                .setTimestamp(),
+            ],
+          });
+          await message.delete().catch(() => {});
+        } catch (e) {
+          await msg.edit({ embeds: [errorEmbed('Erreur', String(e))] });
+        }
+        return;
+      }
+
+      // +backup list
+      if (sub === 'list') {
+        const backups = await listBackups(guild.id);
+        if (backups.length === 0) {
+          await reply(errorEmbed('Aucun backup', 'Aucun backup trouvé pour ce serveur. Utilise `+backup create`.'));
+          return;
+        }
+        const list = backups.map((b, i) =>
+          `**${i + 1}.** \`${b.id.slice(0, 8)}\` — ${b.guildName} — ${formatSize(b.size)} — <t:${Math.floor(new Date(b.createdAt).getTime() / 1000)}:R> — par <@${b.createdBy}>`
+        ).join('\n');
+        const embed = new EmbedBuilder()
+          .setColor(0x5865f2)
+          .setTitle('💾 Backups du serveur')
+          .setDescription(list)
+          .setFooter({ text: `${backups.length} backup(s) — 10 maximum conservés` })
+          .setTimestamp();
+        await reply(embed);
+        return;
+      }
+
+      // +backup info <id>
+      if (sub === 'info') {
+        const id = args[0];
+        if (!id) { await reply(errorEmbed('Usage', '`+backup info <id>`')); return; }
+        const match = (await listBackups(guild.id)).find((b) => b.id.startsWith(id));
+        if (!match) { await reply(errorEmbed('Introuvable', `Aucun backup trouvé avec l'ID \`${id}\`.`)); return; }
+        const embed = new EmbedBuilder()
+          .setColor(0x5865f2)
+          .setTitle('💾 Informations du backup')
+          .addFields(
+            { name: '🆔 ID complet', value: `\`${match.id}\``, inline: false },
+            { name: '📋 Serveur', value: match.guildName, inline: true },
+            { name: '📦 Taille', value: formatSize(match.size), inline: true },
+            { name: '👤 Créé par', value: `<@${match.createdBy}>`, inline: true },
+            { name: '📅 Date', value: `<t:${Math.floor(new Date(match.createdAt).getTime() / 1000)}:f>`, inline: true },
+          )
+          .setTimestamp();
+        await reply(embed);
+        return;
+      }
+
+      // +backup export <id>
+      if (sub === 'export') {
+        const id = args[0];
+        if (!id) { await reply(errorEmbed('Usage', '`+backup export <id>`')); return; }
+        const match = (await listBackups(guild.id)).find((b) => b.id.startsWith(id));
+        if (!match) { await reply(errorEmbed('Introuvable', `Aucun backup trouvé avec l'ID \`${id}\`.`)); return; }
+        const file = await exportBackupAsFile(match.id, guild.id);
+        if (!file) { await reply(errorEmbed('Erreur', 'Impossible d\'exporter ce backup.')); return; }
+        await message.delete().catch(() => {});
+        await message.channel.send({
+          content: `💾 Export du backup \`${match.id.slice(0, 8)}\` — **${match.guildName}**`,
+          files: [{ name: file.filename, attachment: Buffer.from(file.data, 'utf8') }],
+        });
+        return;
+      }
+
+      // +backup load <id>
+      if (sub === 'load' || sub === 'restore') {
+        const id = args[0];
+        if (!id) { await reply(errorEmbed('Usage', '`+backup load <id>`')); return; }
+        const match = (await listBackups(guild.id)).find((b) => b.id.startsWith(id));
+        if (!match) { await reply(errorEmbed('Introuvable', `Aucun backup trouvé avec l'ID \`${id}\`.`)); return; }
+
+        const msg = await message.reply({
+          embeds: [
+            new EmbedBuilder()
+              .setColor(0xfee75c)
+              .setTitle('⚠️ Restauration en cours...')
+              .setDescription(`Restauration du backup \`${match.id.slice(0, 8)}\` du **${new Date(match.createdAt).toLocaleDateString('fr-FR')}**.\n\nCeci peut prendre quelques instants...`)
+              .setTimestamp(),
+          ],
+        });
+
+        try {
+          const { restored, errors } = await loadBackup(client, guild, match.id, {
+            restoreRoles: true,
+            restoreChannels: true,
+            restoreBotConfig: true,
+          });
+
+          const embed = new EmbedBuilder()
+            .setColor(errors.length > 0 ? 0xfee75c : 0x57f287)
+            .setTitle(`${errors.length > 0 ? '⚠️' : '✅'} Backup restauré`)
+            .addFields(
+              { name: '✅ Éléments restaurés', value: restored.length > 0 ? restored.slice(0, 10).join('\n') : 'Aucun', inline: false },
+            );
+
+          if (errors.length > 0) {
+            embed.addFields({
+              name: `❌ Erreurs (${errors.length})`,
+              value: errors.slice(0, 5).join('\n').slice(0, 1000),
+              inline: false,
+            });
+          }
+
+          embed.setTimestamp();
+          await msg.edit({ embeds: [embed] });
+          await message.delete().catch(() => {});
+        } catch (e) {
+          await msg.edit({ embeds: [errorEmbed('Erreur de restauration', String(e))] });
+        }
+        return;
+      }
+
+      // +backup delete <id>
+      if (sub === 'delete' || sub === 'del') {
+        const id = args[0];
+        if (!id) { await reply(errorEmbed('Usage', '`+backup delete <id>`')); return; }
+        const match = (await listBackups(guild.id)).find((b) => b.id.startsWith(id));
+        if (!match) { await reply(errorEmbed('Introuvable', `Aucun backup trouvé avec l'ID \`${id}\`.`)); return; }
+        await deleteBackup(match.id, guild.id);
+        await reply(successEmbed('Backup supprimé', `Le backup \`${match.id.slice(0, 8)}\` a été supprimé.`));
+        return;
+      }
+
+      await reply(errorEmbed('Usage', [
+        '`+backup create` — créer un backup',
+        '`+backup list` — voir les backups',
+        '`+backup info <id>` — détails d\'un backup',
+        '`+backup export <id>` — télécharger le backup en JSON',
+        '`+backup load <id>` — restaurer un backup',
+        '`+backup delete <id>` — supprimer un backup',
+      ].join('\n')));
       return;
     }
 
